@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: myproxy
+      POSTGRES_USER: myproxy
+      POSTGRES_PASSWORD: myproxy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4.2-alpine
+    volumes:
+      - redis_data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["sh", "-c", "npx prisma migrate deploy && node --import tsx src/web/server.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://myproxy:myproxy@postgres:5432/myproxy?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "3000"
+
+  proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: ["node", "--import", "tsx", "src/proxy/server.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://myproxy:myproxy@postgres:5432/myproxy?schema=public
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - web
+      - proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certbot/webroot:/var/www/certbot:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+volumes:
+  postgres_data:
+  redis_data:

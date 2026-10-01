@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String            @id @default(cuid())
+  email            String            @unique
+  name             String?
+  googleId         String            @unique
+  image            String?
+  intelligentSwitcher Boolean @default(true)
+  preferredModel   String?
+  preferredEffort  String?
+  codexToken       CodexToken?
+  codexCredentials CodexCredential[]
+  connectionJobs   ConnectionJob[]
+  apiKeys          ApiKey[]
+  sessions         Session[]
+  usageLogs        UsageLog[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+/// Tracks ongoing device code authentication attempts
+model ConnectionJob {
+  id              String   @id @default(cuid())
+  userId          String
+  deviceAuthId    String // From OpenAI device code response
+  userCode        String // User enters this in browser
+  verificationUrl String // URL to open in browser
+  status          String // pending, completed, failed, expired
+  expiresAt       DateTime // Device code expiration
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([deviceAuthId])
+}
+
+/// Stores encrypted ChatGPT/Codex tokens from device code flow
+model CodexToken {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  accessToken     String // AES-256-GCM encrypted
+  refreshToken    String // AES-256-GCM encrypted
+  idToken         String? // AES-256-GCM encrypted (optional)
+  expiresAt       DateTime // Token expiration time
+  lastRefreshedAt DateTime? // Last successful refresh
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Imported, encrypted Codex auth.json credentials. Plaintext tokens are never stored.
+model CodexCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  label           String
+  status          String    @default("active")
+  accessToken     String
+  refreshToken    String
+  idToken         String?
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+  lastRefreshedAt DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([userId, lastUsedAt])
+}
+
+/// MyProxy API keys for users to access the proxy
+model ApiKey {
+  id           String    @id @default(cuid())
+  keyHash      String    @unique
+  keyEncrypted String? // AES-256-GCM envelope so the owner can reveal the key again
+  userId       String
+  name         String
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+}
+
+/// Server-side login sessions. The cookie carries an HMAC-signed session id;
+/// revocation is enforced by deleting the row.
+model Session {
+  id         String   @id // random session id embedded in the signed cookie
+  userId     String
+  csrfToken  String
+  device     String   @default("Unknown device")
+  ip         String   @default("—")
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSeenAt])
+}
+
+/// Request metadata for proxied calls. Prompts and responses are never stored.
+model UsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  route        String
+  model        String   @default("")
+  statusCode   Int
+  latencyMs    Int      @default(0)
+  keyPrefix    String?
+  profileLabel String?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}

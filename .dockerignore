@@ -1,0 +1,13 @@
+node_modules
+frontend/node_modules
+frontend/dist
+.git
+.kiro
+.kiro-server
+.cache
+.aws
+.ssh
+*.log
+.env
+frontend-source
+.npm
