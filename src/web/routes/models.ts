@@ -3,10 +3,13 @@ import { Redis } from "ioredis";
 import { prisma } from "../../db/client.js";
 import { authMiddleware, requireAuth } from "../auth-middleware.js";
 import { decryptToken } from "../../utils/encryption.js";
+import { extractAccountId } from "../../proxy/codex-backend.js";
 import { loadConfig } from "../../config.js";
 
 const config = loadConfig();
 const CACHE_TTL_SECONDS = 300;
+const CODEX_CLI_VERSION = process.env.CODEX_CLI_VERSION || "0.153.4";
+const CODEX_MODELS_URL = process.env.CODEX_MODELS_URL || "https://chatgpt.com/backend-api/codex/models";
 
 export interface ModelOption { id: string; label: string; }
 
@@ -57,15 +60,38 @@ async function fetchUpstreamModels(userId: string, log: { warn: (msg: string) =>
   } catch {
     return null;
   }
-  const baseUrl = (config.upstreamBaseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
   try {
-    const res = await fetch(`${baseUrl}/models`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+    // API-key mode: a custom UPSTREAM_BASE_URL speaks the platform /models shape.
+    if (config.upstreamBaseUrl) {
+      const res = await fetch(`${config.upstreamBaseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+      if (!res.ok) {
+        log.warn(`Upstream /models returned ${res.status}`);
+        return null;
+      }
+      const data = await res.json() as { data?: { id?: unknown }[] };
+      const ids = (data.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+      return ids.length ? [...new Set(ids)].sort().map((id) => ({ id, label: prettify(id) })) : null;
+    }
+    // ChatGPT subscription tokens are rejected by api.openai.com; the Codex backend
+    // exposes its own model list, gated by client_version + chatgpt-account-id.
+    const accountId = extractAccountId(token);
+    const res = await fetch(`${CODEX_MODELS_URL}?client_version=${CODEX_CLI_VERSION}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "User-Agent": `codex_cli_rs/${CODEX_CLI_VERSION} (proxy; node ${process.version})`,
+        originator: "codex_cli_rs",
+        version: CODEX_CLI_VERSION,
+        ...(accountId ? { "chatgpt-account-id": accountId } : {}),
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) {
-      log.warn(`Upstream /models returned ${res.status}`);
+      log.warn(`Codex /models returned ${res.status}`);
       return null;
     }
-    const data = await res.json() as { data?: { id?: unknown }[] };
-    const ids = (data.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+    const data = await res.json() as { models?: { slug?: unknown; id?: unknown }[]; data?: { slug?: unknown; id?: unknown }[] };
+    const list = data.models ?? data.data ?? [];
+    const ids = list.map((m) => (typeof m.slug === "string" && m.slug ? m.slug : m.id)).filter((id): id is string => typeof id === "string" && id.length > 0);
     if (!ids.length) return null;
     return [...new Set(ids)].sort().map((id) => ({ id, label: prettify(id) }));
   } catch {

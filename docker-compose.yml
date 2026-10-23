@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16.6-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: myproxy
       POSTGRES_USER: myproxy
@@ -10,10 +11,12 @@ services:
 
   redis:
     image: redis:7.4.2-alpine
+    restart: unless-stopped
     volumes:
       - redis_data:/data
 
   web:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -29,6 +32,7 @@ services:
       - "3000"
 
   proxy:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -44,6 +48,7 @@ services:
       - "8080"
 
   frontend:
+    restart: unless-stopped
     build:
       context: ./frontend
       dockerfile: Dockerfile

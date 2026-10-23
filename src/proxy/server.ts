@@ -3,6 +3,7 @@ import { loadConfig } from "../config.js";
 import { prisma } from "../db/client.js";
 import { authenticateProxyRequest } from "./auth.js";
 import { forwardToUpstream } from "./upstream.js";
+import { isHidden, isLocked } from "../web/feature-flags.js";
 
 const config = loadConfig();
 const app = Fastify({
@@ -40,11 +41,19 @@ app.all("/v1/*", async (request, reply) => {
     });
   }
 
+  if (await isHidden("proxy_access")) {
+    return reply.status(403).send({ error: "feature_hidden", feature: "proxy_access" });
+  }
+
+  if (await isLocked("proxy_access")) {
+    return reply.status(403).send({ error: "feature_locked", feature: "proxy_access" });
+  }
+
   // Forward to upstream
-  await forwardToUpstream(request, reply, {
+  const usage = await forwardToUpstream(request, reply, {
     accessToken: authResult.accessToken,
     accessTokens: authResult.accessTokens,
-    intelligentSwitcher: authResult.intelligentSwitcher,
+    intelligentSwitcher: authResult.intelligentSwitcher && !(await isLocked("intelligent_switcher")),
     upstreamBaseUrl: config.upstreamBaseUrl,
   });
 
@@ -59,6 +68,8 @@ app.all("/v1/*", async (request, reply) => {
       latencyMs: Date.now() - startedAt,
       keyPrefix: authResult.keyPrefix,
       profileLabel: authResult.profileLabel,
+      promptTokens: usage?.prompt_tokens ?? 0,
+      completionTokens: usage?.completion_tokens ?? 0,
     },
   }).catch((err) => request.log.error({ err }, "Failed to record usage"));
 });

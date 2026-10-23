@@ -14,7 +14,9 @@ model User {
   googleId         String            @unique
   image            String?
   intelligentSwitcher Boolean @default(true)
+  role             String            @default("member")
   preferredModel   String?
+  preferredModelLabel String?
   preferredEffort  String?
   codexToken       CodexToken?
   codexCredentials CodexCredential[]
@@ -55,6 +57,8 @@ model CodexToken {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
 
 /// Imported, encrypted Codex auth.json credentials. Plaintext tokens are never stored.
@@ -118,8 +122,18 @@ model UsageLog {
   latencyMs    Int      @default(0)
   keyPrefix    String?
   profileLabel String?
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+/// Admin-controlled feature locks and visibility. Missing rows count as unlocked and visible.
+model FeatureFlag {
+  key       String   @id
+  locked    Boolean  @default(false)
+  hidden    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }

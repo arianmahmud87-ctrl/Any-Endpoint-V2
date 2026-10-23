@@ -87,8 +87,57 @@
   .dot-drift { animation: dotDrift 30s linear infinite; }
   @keyframes dotDrift { to { background-position: 22px 22px; } }
 
+  .lock-bob { animation: lockBob 3.2s ease-in-out infinite; }
+  @keyframes lockBob { 0%, 100% { transform: translateY(0) rotate(0deg); } 12% { transform: translateY(0) rotate(-6deg); } 24% { transform: translateY(-2px) rotate(5deg); } 36% { transform: translateY(0) rotate(-3deg); } 48% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(0); } }
+  .lock-ring { animation: lockRing 2.4s ease-out infinite; }
+  @keyframes lockRing { 0% { transform: scale(.7); opacity: .5; } 70% { transform: scale(1.35); opacity: 0; } 100% { transform: scale(1.35); opacity: 0; } }
+  .lock-shackle { transform-origin: 12px 9px; animation: shackle 3.2s ease-in-out infinite; }
+  @keyframes shackle { 0%, 44% { transform: rotate(0deg); } 52% { transform: rotate(-18deg); } 60% { transform: rotate(-18deg); } 68% { transform: rotate(0deg); } 100% { transform: rotate(0deg); } }
+
+  .disc-pop-in { animation: discPopIn .35s cubic-bezier(.2,.7,.1,1) both; }
+  @keyframes discPopIn { from { opacity: 0; transform: translateY(16px) scale(.95); } to { opacity: 1; transform: none; } }
+  .disc-pop-out { animation: discPopOut .3s ease-in both; }
+  @keyframes discPopOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(10px) scale(.94); } }
+  .disc-fade-out { animation: discFadeOut .3s ease-in both; }
+  @keyframes discFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  /* Sign-in screen: staggered pop entrance with a soft overshoot. */
+  .pop-in { animation: popIn .55s cubic-bezier(.2,.7,.1,1) both; animation-delay: var(--d, 0ms); }
+  @keyframes popIn { from { opacity: 0; transform: scale(.82) translateY(12px); } 60% { opacity: 1; } to { opacity: 1; transform: none; } }
+
+  /* The ring draws itself, then the pulse line draws in behind it. */
+  .logo-draw circle, .logo-draw path { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: logoDraw 1.3s cubic-bezier(.3,.6,.2,1) forwards; }
+  .logo-draw path { animation-delay: .55s; }
+  @keyframes logoDraw { to { stroke-dashoffset: 0; } }
+
+  /* Slow breathing on the brand mark once the draw finishes. */
+  .logo-breathe { animation: logoBreathe 3.6s ease-in-out 2s infinite; }
+  @keyframes logoBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+
+  /* One-time sonar halo around the logo tile. */
+  .halo { position: relative; }
+  .halo::after { content: ""; position: absolute; inset: -5px; border-radius: inherit; border: 1px solid hsl(var(--foreground) / .22); opacity: 0; animation: haloPing 3.4s ease-out 1.6s infinite; }
+  @keyframes haloPing { 0% { transform: scale(.9); opacity: .55; } 70%, 100% { transform: scale(1.28); opacity: 0; } }
+
+  /* Ambient glow blobs drifting behind the sign-in card. */
+  .aurora-a { animation: auroraDrift 16s ease-in-out infinite alternate; }
+  .aurora-b { animation: auroraDrift 20s ease-in-out -8s infinite alternate-reverse; }
+  @keyframes auroraDrift { from { transform: translate(-7%, -5%) scale(1); } to { transform: translate(7%, 6%) scale(1.18); } }
+
+  /* Light sweep across the Google button on hover. */
+  .btn-shine { position: relative; overflow: hidden; }
+  .btn-shine::before { content: ""; position: absolute; top: -20%; bottom: -20%; left: -70%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent); transform: skewX(-20deg); }
+  .btn-shine:hover::before { animation: shineSweep .9s ease; }
+  @keyframes shineSweep { to { left: 135%; } }
+
+  /* Intro handoff: the oversized logo tile glides and shrinks into its real slot.
+     Long ease-out with a faint float so it settles instead of stopping. */
+  .intro-fly { transition: transform .7s cubic-bezier(.22,.8,.24,1); will-change: transform; transform-origin: center center; }
+
   @media (prefers-reduced-motion: reduce) {
     .reveal, .word, .draw-line, .draw-line-y { animation: none; opacity: 1; transform: none; filter: none; }
-    .shimmer-text, .float-a, .float-b, .dot-drift { animation: none; }
+    .shimmer-text, .float-a, .float-b, .dot-drift, .lock-bob, .lock-ring, .lock-shackle { animation: none; }
+    .disc-pop-in, .disc-pop-out, .disc-fade-out, .pop-in, .logo-breathe, .halo::after, .aurora-a, .aurora-b { animation: none; }
+    .logo-draw circle, .logo-draw path { animation: none; stroke-dashoffset: 0; }
   }
 }

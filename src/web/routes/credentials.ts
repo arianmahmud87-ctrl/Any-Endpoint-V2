@@ -4,6 +4,7 @@ import { validateAuthJson } from "../../codex/auth.js";
 import { encryptToken } from "../../utils/encryption.js";
 import { authMiddleware, requireAuth } from "../auth-middleware.js";
 import { sendError } from "../errors.js";
+import { assertUnlocked, assertVisible } from "../feature-flags.js";
 import { loadConfig } from "../../config.js";
 
 const config = loadConfig();
@@ -16,6 +17,8 @@ function safeCredential(c: { id: string; label: string; status: string; expiresA
 
 export async function credentialRoutes(app: FastifyInstance) {
   app.post<{ Body: ImportBody }>("/api/codex/credentials/import", { preHandler: authMiddleware, bodyLimit: 300 * 1024 }, async (request, reply) => {
+    if (!(await assertUnlocked("profiles", reply))) return;
+    if (!(await assertVisible("profiles", reply))) return;
     const user = await requireAuth(request);
     const body = request.body ?? {};
     const fields: Record<string, string> = {};
@@ -56,6 +59,8 @@ export async function credentialRoutes(app: FastifyInstance) {
   });
 
   app.delete<{ Params: { credentialId: string } }>("/api/codex/credentials/:credentialId", { preHandler: authMiddleware }, async (request, reply) => {
+    if (!(await assertUnlocked("profiles", reply))) return;
+    if (!(await assertVisible("profiles", reply))) return;
     const user = await requireAuth(request);
     const result = await prisma.codexCredential.updateMany({ where: { id: request.params.credentialId, userId: user.id, revokedAt: null }, data: { revokedAt: new Date(), status: "revoked" } });
     if (result.count === 0) return sendError(reply, 404, "Credential not found", "not_found");

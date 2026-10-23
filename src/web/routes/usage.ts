@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../../db/client.js";
 import { authMiddleware, requireAuth } from "../auth-middleware.js";
+import { assertUnlocked, assertVisible } from "../feature-flags.js";
 
 export async function usageRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { limit?: string } }>("/api/usage", { preHandler: authMiddleware }, async (request) => {
@@ -20,7 +21,40 @@ export async function usageRoutes(app: FastifyInstance) {
       created_at: r.createdAt.toISOString(),
       profile_label: r.profileLabel ?? "—",
       key_prefix: r.keyPrefix,
+      prompt_tokens: r.promptTokens,
+      completion_tokens: r.completionTokens,
     }));
+  });
+
+  app.get("/api/usage/tokens", { preHandler: authMiddleware }, async (request, reply) => {
+    const user = await requireAuth(request);
+    if (!(await assertUnlocked("tokens", reply))) return;
+    if (!(await assertVisible("tokens", reply))) return;
+    const [total, perDay, perModel] = await Promise.all([
+      prisma.usageLog.aggregate({
+        where: { userId: user.id },
+        _sum: { promptTokens: true, completionTokens: true },
+      }),
+      prisma.$queryRaw<{ date: string; input: bigint; output: bigint }[]>`
+        SELECT to_char("createdAt"::date, 'YYYY-MM-DD') AS date,
+               COALESCE(SUM("promptTokens"), 0)::bigint AS input,
+               COALESCE(SUM("completionTokens"), 0)::bigint AS output
+        FROM "UsageLog"
+        WHERE "userId" = ${user.id}
+        GROUP BY "createdAt"::date
+        ORDER BY "createdAt"::date ASC
+      `,
+      prisma.usageLog.groupBy({
+        by: ["model"],
+        where: { userId: user.id },
+        _sum: { promptTokens: true, completionTokens: true },
+      }),
+    ]);
+    return {
+      total: { input: total._sum.promptTokens ?? 0, output: total._sum.completionTokens ?? 0 },
+      perDay: perDay.map((row) => ({ date: row.date, input: Number(row.input), output: Number(row.output) })),
+      perModel: perModel.map((row) => ({ model: row.model, input: row._sum.promptTokens ?? 0, output: row._sum.completionTokens ?? 0 })),
+    };
   });
 
   app.get("/api/operations/summary", { preHandler: authMiddleware }, async (request) => {

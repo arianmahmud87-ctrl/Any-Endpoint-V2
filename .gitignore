@@ -1,11 +1,26 @@
+# --- Home-directory / OS noise (this repo lives in $HOME) ---
+.*
+!.gitignore
+!.dockerignore
+!frontend/.gitignore
+!frontend/.dockerignore
+!.env.example
+
+# --- Dependencies & build output ---
 node_modules/
 .next/
 dist/
+.prisma/
+coverage/
+
+# --- Env & secrets ---
 .env
 .env.*
 !.env.example
-.prisma/
-coverage/
-*.log
 **/auth.json
 **/.codex/
+
+# --- Runtime files ---
+*.log
+certbot/webroot/.well-known/
+certbot/webroot/.well-known-test

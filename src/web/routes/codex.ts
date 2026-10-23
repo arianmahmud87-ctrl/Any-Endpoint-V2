@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../../db/client.js";
 import { authMiddleware, requireAuth } from "../auth-middleware.js";
+import { assertUnlocked, assertVisible } from "../feature-flags.js";
 import { requestDeviceCode } from "../../codex/device-code.js";
 import { addJob } from "../../worker/queue.js";
 import { loadConfig } from "../../config.js";
@@ -21,6 +22,9 @@ export async function codexRoutes(app: FastifyInstance) {
     { preHandler: authMiddleware },
     async (request, reply) => {
       const user = await requireAuth(request);
+
+      if (!(await assertUnlocked("profiles", reply))) return;
+      if (!(await assertVisible("profiles", reply))) return;
 
       // Check if user already has a valid connection
       const existingToken = await prisma.codexToken.findUnique({

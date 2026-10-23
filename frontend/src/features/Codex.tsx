@@ -1,13 +1,13 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Plus } from "lucide-react";
+import { ClipboardPaste, FileJson, Plus, ShieldCheck, Upload } from "lucide-react";
 import { api, errorMessage } from "@/lib/api/client";
-import { useAction, useCodexCredentials, useSettings } from "@/lib/api/hooks";
+import { useAction, useCodexCredentials, useFlags, useSettings } from "@/lib/api/hooks";
 import { ApiError, type CodexCredential } from "@/lib/api/types";
-import { Btn, Dot, Empty, ErrorState, Field, inputCls, LoadingRows } from "@/components/kit";
+import { Btn, Dot, Empty, ErrorState, Field, inputCls, LoadingRows, Tag } from "@/components/kit";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { relTime } from "@/lib/format";
+import { num, relTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const LABEL_LIMIT = 64;
@@ -69,16 +69,49 @@ export function SwitcherButton({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** Compact per-profile on/off switch, same motion language as the failover switch. */
+function ProfileSwitch({ on, pending, onToggle, label }: { on: boolean; pending: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={`${on ? "Disable" : "Enable"} ${label}`}
+      title={on ? `Disable ${label}` : `Enable ${label}`}
+      disabled={pending}
+      onClick={onToggle}
+      className={cn(
+        "relative flex h-7 w-[64px] shrink-0 items-center rounded-full border bg-background px-0.5 shadow-sm transition active:scale-[0.97] disabled:opacity-50",
+        on && "border-foreground bg-foreground text-background",
+      )}
+    >
+      <span className={cn("absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-foreground transition-all duration-300 ease-out", on && "left-[38px] bg-background")} />
+      <span className={cn("relative z-10 w-full text-center text-[10.5px] font-medium", on ? "pr-5" : "pl-5")}>
+        {pending ? "…" : on ? "On" : "Off"}
+      </span>
+    </button>
+  );
+}
+
 export function SwitcherControl() {
   const { on } = useSwitcher();
+  const flags = useFlags();
+  const locked = flags.data?.locked.includes("intelligent_switcher") ?? false;
+  // Hidden means invisible entirely; locked means visible but read-only.
+  if (flags.data?.hidden.includes("intelligent_switcher")) return null;
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border px-4 py-4">
       <div className="min-w-0">
-        <p className="font-medium">Intelligent Switcher</p>
+        <p className="flex items-center gap-2 font-medium">
+          Intelligent Switcher
+          {locked && <Tag>Locked by administrator</Tag>}
+        </p>
         <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-muted-foreground">
-          {on
-            ? "Failover enabled. A retry-safe failure tries the next active profile."
-            : "Requests stay on the selected profile. A failure is returned without switching."}
+          {locked
+            ? "This feature is temporarily disabled by the administrator."
+            : on
+              ? "Failover enabled. A retry-safe failure tries the next active profile."
+              : "Requests stay on the selected profile. A failure is returned without switching."}
         </p>
       </div>
       <SwitcherButton />
@@ -92,7 +125,9 @@ export function AddCodexProfile({ open, onOpenChange }: { open: boolean; onOpenC
   const [label, setLabel] = useState<string>("");
   const [content, setContent] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
+  const [dragging, setDragging] = useState<boolean>(false);
   const [ack, setAck] = useState<boolean>(false);
+  const [mode, setMode] = useState<"upload" | "paste">("upload");
   const [fields, setFields] = useState<Record<string, string>>({});
 
   const clearSecrets = () => {
@@ -105,6 +140,7 @@ export function AddCodexProfile({ open, onOpenChange }: { open: boolean; onOpenC
     clearSecrets();
     setLabel("");
     setAck(false);
+    setMode("upload");
     setFields({});
     onOpenChange(false);
   };
@@ -151,50 +187,104 @@ export function AddCodexProfile({ open, onOpenChange }: { open: boolean; onOpenC
     importCred.mutate({ label: name, content });
   };
 
+  const step = (n: string, title: string) => (
+    <div className="flex items-center gap-2">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[10.5px] font-medium text-muted-foreground">{n}</span>
+      <span className="text-[13px] font-medium">{title}</span>
+    </div>
+  );
+
   return (
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
       <DialogContent className="max-w-md rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-base">Add Codex profile</DialogTitle>
-          <DialogDescription className="text-[13px]">Name the account yourself. A name is never generated for you.</DialogDescription>
+          <DialogTitle className="text-base">Add Profile</DialogTitle>
         </DialogHeader>
-        <form className="space-y-4" onSubmit={submit}>
-          <div className="flex items-start gap-2 rounded-lg bg-[hsl(var(--warn)/.1)] p-3 text-[12.5px] leading-relaxed">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>auth.json contains login credentials. It is sent once over your session, then cleared from this page. It is never saved in the browser.</span>
+        <form className="space-y-5" onSubmit={submit}>
+          <div className="flex items-start gap-2.5 rounded-xl border bg-[hsl(var(--canvas))] p-3 text-[12.5px] leading-relaxed">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.8} />
+            <span className="text-muted-foreground">Sent once over your encrypted session, then cleared from this page. Never stored in the browser.</span>
           </div>
-          <Field label="Profile name">
-            <input className={inputCls} value={label} onChange={(e) => setLabel(e.target.value)} maxLength={LABEL_LIMIT} placeholder="Work account" autoComplete="off" required />
-            {fields.label && <p className="mt-1.5 text-[12px] text-destructive">{fields.label}</p>}
-          </Field>
-          <Field label="auth.json">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json"
-              className="block w-full text-[13px] file:mr-3 file:h-8 file:rounded-lg file:border-0 file:bg-secondary file:px-3 file:text-[13px] file:font-medium"
-              onChange={(e) => void onFile(e.target.files?.[0])}
-            />
-            {fileName && <p className="mt-1.5 text-[12px] text-muted-foreground">{fileName} selected. The file contents are not shown.</p>}
-          </Field>
-          <Field label="Or paste auth.json">
-            <textarea
-              value={content && fileName ? "" : content}
-              onChange={(e) => { setFileName(""); setContent(e.target.value); }}
-              placeholder="Optional. Paste only if you are not uploading a file."
-              rows={4}
-              autoComplete="off"
-              spellCheck={false}
-              className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-[13px] outline-none focus:border-foreground/30"
-            />
-            {fields.content && <p className="mt-1.5 text-[12px] text-destructive">{fields.content}</p>}
-          </Field>
-          <label className="flex items-start gap-2.5 text-[13px] leading-relaxed">
-            <input type="checkbox" className="mt-0.5" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-            <span>I understand this file contains sensitive login credentials.</span>
-          </label>
-          {fields.ack && <p className="-mt-2 text-[12px] text-destructive">{fields.ack}</p>}
-          <div className="flex justify-end gap-2">
+
+          <div className="space-y-2">
+            {step("1", "Name the account")}
+            <Field label="Profile name">
+              <input className={inputCls} value={label} onChange={(e) => setLabel(e.target.value)} maxLength={LABEL_LIMIT} placeholder="Work account" autoComplete="off" required />
+              {fields.label && <p className="mt-1.5 text-[12px] text-destructive">{fields.label}</p>}
+            </Field>
+          </div>
+
+          <div className="space-y-2">
+            {step("2", "Provide auth.json")}
+            <div className="flex rounded-lg border bg-secondary/40 p-0.5">
+              {([["upload", "Upload file", FileJson], ["paste", "Paste JSON", ClipboardPaste]] as const).map(([m, text, Icon]) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={cn("flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[7px] text-[12.5px] font-medium transition", mode === m ? "border shadow-sm bg-background" : "text-muted-foreground hover:text-foreground")}
+                >
+                  <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+                  {text}
+                </button>
+              ))}
+            </div>
+            {mode === "upload" ? (
+              <div>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => void onFile(e.target.files?.[0])}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragging(false);
+                    void onFile(e.dataTransfer.files?.[0]);
+                  }}
+                  className={cn(
+                    "flex w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-7 text-center transition",
+                    dragging ? "border-foreground bg-secondary" : "hover:border-foreground/40 hover:bg-secondary/50",
+                  )}
+                >
+                  {fileName ? <FileJson className="h-4 w-4 text-muted-foreground" /> : <Upload className="h-4 w-4 text-muted-foreground" />}
+                  {fileName ? (
+                    <span className="mt-2 text-[13px] font-medium">{fileName} <span className="font-normal text-muted-foreground">selected — contents hidden</span></span>
+                  ) : (
+                    <span className="mt-2 text-[13px] text-muted-foreground">Drop auth.json here, or <span className="font-medium text-foreground">click to browse</span></span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <textarea
+                value={content && fileName ? "" : content}
+                onChange={(e) => { setFileName(""); setContent(e.target.value); }}
+                placeholder='{"tokens": {"refresh_token": "…", "access_token": "…"}}'
+                rows={4}
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full resize-none rounded-lg border bg-background px-3 py-2 font-mono text-[12px] outline-none focus:border-foreground/30"
+              />
+            )}
+            {fields.content && <p className="text-[12px] text-destructive">{fields.content}</p>}
+          </div>
+
+          <div className="space-y-2">
+            {step("3", "Confirm and import")}
+            <label className={cn("flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 text-[13px] leading-relaxed transition hover:bg-secondary/40", ack && "border-foreground/30")}>
+              <input type="checkbox" className="mt-0.5 accent-foreground" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+              <span>I understand this file contains sensitive login credentials.</span>
+            </label>
+            {fields.ack && <p className="text-[12px] text-destructive">{fields.ack}</p>}
+          </div>
+
+          <div className="flex justify-end gap-2 border-t pt-4">
             <Btn type="button" onClick={close}>Cancel</Btn>
             <Btn variant="primary" disabled={importCred.isPending}>{importCred.isPending ? "Importing…" : "Import profile"}</Btn>
           </div>
@@ -204,59 +294,120 @@ export function AddCodexProfile({ open, onOpenChange }: { open: boolean; onOpenC
   );
 }
 
+const STATUS_FILTERS = ["all", "active", "disabled", "expired", "revoked"] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
 export function CodexProfiles({ onAdd }: { onAdd: () => void }) {
   const q = useCodexCredentials();
   const [busyId, setBusyId] = useState<string>("");
   const [revoking, setRevoking] = useState<CodexCredential | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [search, setSearch] = useState<string>("");
   const toggle = useAction<{ id: string; kind: "enable" | "disable" }>((v) => `/api/codex/credentials/${v.id}/${v.kind}`, INV);
   const revoke = useAction<string>((id) => `/api/codex/credentials/${id}`, INV, { method: "DELETE" });
 
+  const all = q.data ?? [];
+  const countFor = (s: StatusFilter) => (s === "all" ? all.length : all.filter((c) => c.status === s).length);
+  const visible = all.filter((c) => (filter === "all" || c.status === filter) && c.label.toLowerCase().includes(search.trim().toLowerCase()));
+  const summary = [
+    ["Total", all.length],
+    ["Active", countFor("active")],
+    ["Disabled", countFor("disabled")],
+    ["Expired / revoked", countFor("expired") + countFor("revoked")],
+  ];
+
   return (
     <section className="mb-12">
-      <div className="mb-3 flex items-end justify-between gap-3">
-        <div>
-          <h2 className="text-[15px] font-medium">Codex profiles</h2>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">Named accounts used for routing. Tokens are never shown.</p>
-        </div>
-        <Btn variant="primary" onClick={onAdd}><Plus className="h-3.5 w-3.5" />Add Codex profile</Btn>
+      <div className="mb-3 flex sm:justify-end">
+        <Btn variant="primary" className="w-full sm:w-auto" onClick={onAdd}><Plus className="h-3.5 w-3.5" />Add Profile</Btn>
       </div>
-      {q.isLoading ? <LoadingRows /> : q.isError ? <ErrorState error={q.error} retry={q.refetch} /> : !q.data!.length ? (
-        <Empty title="No Codex profiles" hint="Import auth.json and give the account a name. One API key covers every profile." action={<Btn variant="primary" onClick={onAdd}>Add Codex profile</Btn>} />
+      {q.isLoading ? <LoadingRows /> : q.isError ? <ErrorState error={q.error} retry={q.refetch} /> : !all.length ? (
+        <Empty title="No Codex profiles" hint="Import auth.json and give the account a name. One API key covers every profile." action={<Btn variant="primary" onClick={onAdd}>Add Profile</Btn>} />
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full text-left text-[13px]">
-            <thead>
-              <tr className="border-b bg-[hsl(var(--canvas))] text-[12px] text-muted-foreground">
-                {["Name", "Status", "Expires", "Last used", "Last refreshed", "Created", ""].map((h) => <th key={h} className="whitespace-nowrap px-4 py-2.5 font-medium">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {q.data!.map((c) => (
-                <tr key={c.id}>
-                  <td className="whitespace-nowrap px-4 py-3 font-medium">{c.label}</td>
-                  <td className="px-4 py-3"><Dot state={c.status} /></td>
-                  <td className="whitespace-nowrap px-4 py-3">{c.expires_at ? relTime(c.expires_at) : "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{relTime(c.last_used_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{relTime(c.last_refreshed_at)}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{relTime(c.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1.5">
-                      {c.status === "active" && <Btn disabled={toggle.isPending && busyId === c.id} onClick={() => { setBusyId(c.id); toggle.mutate({ id: c.id, kind: "disable" }, { onSuccess: () => toast(`${c.label} disabled`) }); }}>Disable</Btn>}
-                      {c.status === "disabled" && <Btn disabled={toggle.isPending && busyId === c.id} onClick={() => { setBusyId(c.id); toggle.mutate({ id: c.id, kind: "enable" }, { onSuccess: () => toast(`${c.label} enabled`) }); }}>Enable</Btn>}
-                      {c.status !== "revoked" && <Btn variant="danger" onClick={() => setRevoking(c)}>Revoke</Btn>}
-                    </div>
-                  </td>
-                </tr>
+        <>
+          <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4">
+            {summary.map(([k, v]) => (
+              <div key={k} className="bg-background px-4 py-3">
+                <div className="text-[12px] text-muted-foreground">{k}</div>
+                <div className="mt-0.5 text-[17px] font-semibold tracking-tight">{num(v as number)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {STATUS_FILTERS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setFilter(s)}
+                  className={cn(
+                    "flex h-7 items-center gap-1.5 rounded-full border px-3 text-[12.5px] capitalize transition",
+                    filter === s ? "border-foreground bg-secondary font-medium" : "text-muted-foreground hover:bg-secondary/60",
+                  )}
+                >
+                  {s}
+                  <span className={cn("rounded-full px-1.5 text-[11px]", filter === s ? "bg-background" : "bg-secondary")}>{countFor(s)}</span>
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+            <input
+              className={cn(inputCls, "h-8 max-w-[220px] flex-1")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name"
+              autoComplete="off"
+              aria-label="Search profiles"
+            />
+          </div>
+          {visible.length === 0 ? (
+            <Empty title="No profiles match your filters" hint="Try a different status or clear the search." action={<Btn onClick={() => { setFilter("all"); setSearch(""); }}>Clear filters</Btn>} />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {visible.map((c) => (
+                <div key={c.id} className="flex flex-col rounded-xl border bg-background p-4 transition duration-200 hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-md">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-medium">{c.label}</span>
+                    <Dot state={c.status} />
+                  </div>
+                  <dl className="mt-3 flex-1 space-y-1 text-[12.5px]">
+                    {([
+                      ["Expires", c.expires_at],
+                      ["Last used", c.last_used_at],
+                      ["Last refreshed", c.last_refreshed_at],
+                      ["Created", c.created_at],
+                    ] as [string, string | null][]).map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between">
+                        <dt className="text-muted-foreground">{k}</dt>
+                        <dd>{v ? relTime(v) : "—"}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <div className="mt-4 flex items-center justify-between gap-2 border-t pt-3">
+                    {(c.status === "active" || c.status === "disabled") ? (
+                      <ProfileSwitch
+                        on={c.status === "active"}
+                        pending={toggle.isPending && busyId === c.id}
+                        label={c.label}
+                        onToggle={() => {
+                          setBusyId(c.id);
+                          const kind = c.status === "active" ? "disable" : "enable";
+                          toggle.mutate({ id: c.id, kind }, { onSuccess: () => toast(kind === "disable" ? `${c.label} disabled` : `${c.label} enabled`) });
+                        }}
+                      />
+                    ) : <span />}
+                    {c.status !== "revoked" && <Btn variant="danger" className="h-7 px-2.5 text-[12px]" onClick={() => setRevoking(c)}>Revoke</Btn>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
       <Dialog open={!!revoking} onOpenChange={(o) => !o && setRevoking(null)}>
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-base">Revoke {revoking?.label}?</DialogTitle>
-            <DialogDescription className="text-[13px]">“{revoking?.label}” will leave the routing pool. This cannot be undone, and the stored credential is not shown.</DialogDescription>
+            <DialogDescription className="text-[13px]">“{revoking?.label}” will leave the routing pool for good. This cannot be undone, and the stored credential is not shown.</DialogDescription>
           </DialogHeader>
           <div className="mt-2 flex justify-end gap-2">
             <Btn onClick={() => setRevoking(null)}>Cancel</Btn>

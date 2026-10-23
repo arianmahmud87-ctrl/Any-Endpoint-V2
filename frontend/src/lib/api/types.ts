@@ -47,6 +47,47 @@ export interface UsageRow {
   created_at: string;
   profile_label: string;
   key_prefix: string | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface TokenTotals {
+  total: { input: number; output: number };
+  perDay: { date: string; input: number; output: number }[];
+  perModel: { model: string; input: number; output: number }[];
+}
+
+export type FeatureKey = "playground" | "api_keys" | "profiles" | "proxy_access" | "intelligent_switcher" | "tokens";
+
+export interface FeatureFlags {
+  locked: FeatureKey[];
+  hidden: FeatureKey[];
+}
+
+export interface FeatureFlag {
+  key: FeatureKey;
+  locked: boolean;
+  hidden: boolean;
+  updated_at: string | null;
+}
+
+export interface AdminSession {
+  id: string;
+  device: string;
+  ip: string;
+  last_seen_at: string;
+  created_at: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  image: string | null;
+  role: Role;
+  created_at: string;
+  sessions: AdminSession[];
+  counts: { api_keys: number; credentials: number; usage_logs: number };
 }
 
 export interface AuditEvent {
@@ -92,6 +133,7 @@ export interface CodexCredential {
 export interface UserSettings {
   intelligent_switcher: boolean;
   preferred_model: string | null;
+  preferred_model_label: string | null;
   preferred_effort: string | null;
 }
 

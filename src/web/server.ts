@@ -7,6 +7,7 @@ import { settingsRoutes } from "./routes/settings.js";
 import { usageRoutes } from "./routes/usage.js";
 import { modelRoutes } from "./routes/models.js";
 import { authRoutes } from "./routes/auth.js";
+import { adminRoutes } from "./routes/admin.js";
 
 const config = loadConfig();
 const app = Fastify({
@@ -22,6 +23,7 @@ await app.register(settingsRoutes);
 await app.register(usageRoutes);
 await app.register(modelRoutes);
 await app.register(authRoutes);
+await app.register(adminRoutes);
 
 // Health check
 app.get("/health", async () => ({ status: "ok", service: "myproxy-web" }));

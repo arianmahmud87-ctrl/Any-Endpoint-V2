@@ -1,19 +1,6 @@
 import type { Provider } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-const RAYS = [0, 27, 58, 92, 118, 151, 183, 212, 243, 272, 301, 332];
-
-function ClaudeMark() {
-  return (
-    <g stroke="#FBF1EC" strokeLinecap="round" fill="none">
-      {RAYS.map((a, i) => (
-        <line key={a} x1="50" y1="50" x2="50" y2={i % 2 ? 20 : 15} strokeWidth={i % 3 ? 7 : 8} transform={`rotate(${a} 50 50)`} />
-      ))}
-      <circle cx="50" cy="50" r="8" fill="#FBF1EC" stroke="none" />
-    </g>
-  );
-}
-
 function CodexMark() {
   return (
     <g fill="none" stroke="#fff" strokeWidth="5.5" strokeLinejoin="round">
@@ -26,11 +13,10 @@ function CodexMark() {
 
 /** Rounded-square brand icon for a provider. */
 export function ProviderIcon({ provider, size = 18, className }: { provider: Provider; size?: number; className?: string }) {
-  const claude = provider === "claude";
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label={claude ? "Claude" : "Codex"} className={cn("shrink-0", className)}>
-      <rect width="100" height="100" rx="24" fill={claude ? "#D97757" : "#10A37F"} />
-      {claude ? <ClaudeMark /> : <CodexMark />}
+    <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-label="Codex" className={cn("shrink-0", className)}>
+      <rect width="100" height="100" rx="24" fill="#10A37F" />
+      <CodexMark />
     </svg>
   );
 }

@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../../db/client.js";
 import { authMiddleware, requireAuth } from "../auth-middleware.js";
 import { sendError } from "../errors.js";
+import { assertUnlocked, assertVisible } from "../feature-flags.js";
 import { loadConfig } from "../../config.js";
 import { encryptToken, decryptToken } from "../../utils/encryption.js";
 import {
@@ -70,6 +71,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
 
   // List user's API keys (never expose the plaintext key)
   app.get("/api/keys", { preHandler: authMiddleware }, async (request, reply) => {
+    if (!(await assertVisible("api_keys", reply))) return;
     const user = await requireAuth(request);
 
     const keys = await prisma.apiKey.findMany({
@@ -93,6 +95,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   app.post<{
     Body: { name: string };
   }>("/api/keys", { preHandler: authMiddleware }, async (request, reply) => {
+    if (!(await assertUnlocked("api_keys", reply))) return;
+    if (!(await assertVisible("api_keys", reply))) return;
     const user = await requireAuth(request);
 
     const { name } = request.body;

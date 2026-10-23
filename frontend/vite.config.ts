@@ -21,4 +21,13 @@ export default defineConfig(({ mode }) => ({
   // Expose both VITE_* (Vite default) and EXPO_PUBLIC_* (Rork's cross-platform
   // public-env convention, written by tools like getOrCreateAuthConfig).
   envPrefix: ["VITE_", "EXPO_PUBLIC_"],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+        },
+      },
+    },
+  },
 }));

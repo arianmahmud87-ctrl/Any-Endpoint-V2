@@ -10,6 +10,7 @@ export interface AppConfig {
   domain: string;
   cookieDomain?: string;
   availableModels?: string[];
+  adminEmail?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -21,6 +22,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const tokenEncryptionKey = env.TOKEN_ENCRYPTION_KEY;
   const apiKeyHashSecret = env.API_KEY_HASH_SECRET;
   const domain = env.DOMAIN;
+
+  const adminEmail = env.ADMIN_EMAIL?.trim().toLowerCase() || undefined;
+  if (adminEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+    throw new Error("ADMIN_EMAIL must be a valid email address");
+  }
 
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   if (!redisUrl) throw new Error("REDIS_URL is required");
@@ -53,5 +59,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     domain,
     cookieDomain: new URL(domain).hostname,
     availableModels: env.AVAILABLE_MODELS?.split(",").map((s) => s.trim()).filter(Boolean),
+    adminEmail,
   };
 }

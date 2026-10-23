@@ -13,7 +13,7 @@ export function Page({ title, subtitle, actions, children }: { title: string; su
           <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
           {subtitle && <p className="mt-1 text-[13px] text-muted-foreground">{subtitle}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">{actions}</div>}
       </div>
       {children}
     </div>
@@ -101,6 +101,27 @@ export function Empty({ title, hint, action }: { title: string; hint?: string; a
   );
 }
 
+/** Animated "feature locked by administrator" state. */
+export function LockedNotice({ feature }: { feature: string }) {
+  return (
+    <div className="fade-in flex flex-col items-center overflow-hidden rounded-xl border px-6 py-16 text-center">
+      <div className="relative mb-5">
+        <span className="lock-ring absolute inset-0 rounded-full border border-foreground/20" />
+        <div className="lock-bob relative flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7">
+            <rect x="4.5" y="10.5" width="15" height="9.5" rx="2" />
+            <path className="lock-shackle" d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+          </svg>
+        </div>
+      </div>
+      <p className="font-medium">{feature} is locked</p>
+      <p className="mt-1 max-w-sm text-[13px] text-muted-foreground">
+        This feature is temporarily disabled by the administrator. It will be available again once it is unlocked.
+      </p>
+    </div>
+  );
+}
+
 export function ErrorState({ error, retry }: { error: unknown; retry?: () => void }) {
   const denied = error instanceof ApiError && error.status === 403 && error.type !== "no_active_profile";
   return (
@@ -115,11 +136,12 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block">
       <span className="mb-1.5 block text-[12px] font-medium text-muted-foreground">{label}</span>
       {children}
+      {hint && <span className="mt-1.5 block text-[11.5px] leading-relaxed text-muted-foreground/80">{hint}</span>}
     </label>
   );
 }

@@ -147,6 +147,22 @@ The repo does **not** contain runtime data. To move an existing deployment, also
 2. **`.env`** — the exact same `TOKEN_ENCRYPTION_KEY` and `API_KEY_HASH_SECRET` are required, or all stored ChatGPT tokens and existing API keys become invalid.
 3. **Let's Encrypt certs** — `/etc/letsencrypt` (or just re-issue on the new server).
 
+## Fresh-server rebuild checklist (hand this to an AI agent)
+
+The repo is self-contained; a new server can be provisioned end-to-end from this file. Execute in order and verify each step before continuing:
+
+1. **Prereqs** — Ubuntu server with Docker + Compose plugin, and Node.js >= 20.18 on the host (only for secret generation). DNS A-record for the domain pointing at the server. Google OAuth credentials. Clone: `git clone https://github.com/arianmahmud87-ctrl/Any-Endpoint-V2.git` (prefer a clean path like `/opt/myproxy`, not `$HOME`; the root `.gitignore` also supports a `$HOME` checkout).
+2. **Env** — `cp .env.example .env`, then `npm install && npx tsx src/scripts/generate-keys.ts >> .env`. Fill in `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `UPSTREAM_BASE_URL`, `DOMAIN`. Optionally set `ADMIN_EMAIL` to bootstrap the first admin.
+3. **Domain config** — replace every `anyendpoint.online` in `frontend/deploy/nginx.conf` with your domain (server_name + cert paths).
+4. **Build & start** — `docker compose build && docker compose up -d`. The `web` container auto-runs `prisma migrate deploy`. Confirm with `docker compose ps` and `docker compose logs web`.
+5. **Worker** — start it explicitly (not in compose): `docker compose run -d --name worker web node --import tsx src/worker/index.ts`.
+6. **TLS** — with port 80 open: `sudo certbot certonly --webroot -w ./certbot/webroot -d your-domain -d www.your-domain`, then `docker compose restart frontend`.
+7. **Smoke test** — `curl http://localhost:3000/api/keys` (expect 401, not refused), `curl http://localhost:8080/v1/models -H "Authorization: Bearer sk-myproxy-invalid"` (expect 401), and the same through `https://<domain>`.
+8. **First run** — sign in via Google, connect a ChatGPT account (device-code flow), create an API key, and make one test `/v1/chat/completions` call.
+9. **If migrating old data** — follow "Migrating from an existing server" above (same `TOKEN_ENCRYPTION_KEY` and `API_KEY_HASH_SECRET` are mandatory).
+
+Do not commit `.env` or `frontend/.env.production`; do not run `git add .` from a `$HOME` checkout.
+
 ## Local development (no Docker for app processes)
 
 ```bash
@@ -174,7 +190,10 @@ cd frontend && npm install && npm run dev   # terminal 4 — Vite dev server
 
 ## Conventions and gotchas for agents
 
-- **Never commit secrets**: `.env`, `frontend/.env.production`, any `**/auth.json`. The repo lives in a home directory — never `git add .`; add explicit paths only, and never stage `.aws/`, `.ssh/`, `.config/`, shell history, etc.
+- **Admin & feature flags**: `ADMIN_EMAIL` (optional env var) grants the matching Google account `role: "admin"` on sign-in. Admin routes live in `src/web/routes/admin.ts` (`GET /api/admin/users`, `GET/PUT /api/admin/flags/:key`, `DELETE /api/admin/sessions/:id`, plus public `GET /api/flags` for any authenticated user). Flags come from the `FeatureFlag` table via `src/web/feature-flags.ts` (30s in-memory cache); allowed keys: `playground`, `api_keys`, `profiles`, `proxy_access`. Locked features return 403 `{ error: "feature_locked" }`; there is no backend playground-execution endpoint, so `playground` is enforced only as a lock notice via `/api/flags`.
+- **Usage tokens**: `UsageLog` has `promptTokens`/`completionTokens`, filled from upstream usage in `src/proxy/server.ts` (streaming passthrough stays 0). Token aggregates are at `GET /api/usage/tokens`.
+
+- **Never commit secrets**: `.env`, `frontend/.env.production`, any `**/auth.json`. The root `.gitignore` ignores all dotfiles (`.*`) except whitelisted ones (`.gitignore`, `.dockerignore`, `frontend/.gitignore`, `frontend/.dockerignore`, `.env.example`) — this keeps IDE git features working when the repo lives in `$HOME`; keep that rule intact and still never `git add .`.
 - `frontend-source/` is a nested, unrelated git repo (contains only `rork.json`) — leave it alone unless asked.
 - Backend runs TypeScript directly via `tsx`; there is no compiled `dist` output. `npm run build` is a type check — keep it green.
 - Prisma migrations are deployed with `migrate deploy` in containers; create new migrations with `npm run db:migrate` locally.

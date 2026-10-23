@@ -48,7 +48,8 @@ export async function authRoutes(app: FastifyInstance) {
       if (!profileResponse.ok) throw new Error("Google profile lookup failed");
       const profile = await profileResponse.json() as { sub?: string; email?: string; name?: string; picture?: string };
       if (!profile.sub || !profile.email) throw new Error("Google profile is incomplete");
-      const user = await prisma.user.upsert({ where: { googleId: profile.sub }, create: { googleId: profile.sub, email: profile.email, name: profile.name, image: profile.picture }, update: { email: profile.email, name: profile.name, image: profile.picture } });
+      const isAdmin = config.adminEmail !== undefined && profile.email.toLowerCase() === config.adminEmail;
+      const user = await prisma.user.upsert({ where: { googleId: profile.sub }, create: { googleId: profile.sub, email: profile.email, name: profile.name, image: profile.picture, ...(isAdmin ? { role: "admin" } : {}) }, update: { email: profile.email, name: profile.name, image: profile.picture, ...(isAdmin ? { role: "admin" } : {}) } });
       const session = await prisma.session.create({
         data: {
           id: newSessionId(),
@@ -68,9 +69,9 @@ export async function authRoutes(app: FastifyInstance) {
   app.get("/api/me", async (request, reply) => {
     const session = await currentSession(request.headers.cookie);
     if (!session) return sendError(reply, 401, "Not authenticated", "unauthenticated");
-    const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { id: true, email: true, name: true, image: true } });
+    const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { id: true, email: true, name: true, image: true, role: true } });
     if (!user) return sendError(reply, 401, "Not authenticated", "unauthenticated");
-    return { user: { id: user.id, email: user.email, name: user.name ?? user.email, avatar_url: user.image ?? undefined }, organization: { id: "default", name: "Any Endpoint" }, role: "owner", csrf_token: session.csrfToken, environment: process.env.NODE_ENV ?? "production" };
+    return { user: { id: user.id, email: user.email, name: user.name ?? user.email, avatar_url: user.image ?? undefined }, organization: { id: "default", name: "Any Endpoint" }, role: user.role, csrf_token: session.csrfToken, environment: process.env.NODE_ENV ?? "production" };
   });
 
   app.get("/api/auth/sessions", async (request, reply) => {

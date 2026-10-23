@@ -9,7 +9,7 @@ import { sendError } from "./errors.js";
 const config = loadConfig();
 
 declare module "fastify" {
-  interface FastifyRequest { userId?: string; userEmail?: string; sessionId?: string; }
+  interface FastifyRequest { userId?: string; userEmail?: string; userRole?: string; sessionId?: string; }
 }
 
 export interface SessionUser { id: string; email: string; name: string | null; }
@@ -29,7 +29,11 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     sendError(reply, 401, "Not authenticated", "unauthenticated");
     return;
   }
-  const session = await prisma.session.findUnique({ where: { id: cookie.sessionId } });
+  // Single round trip: fetch session with its user instead of two queries.
+  const session = await prisma.session.findUnique({
+    where: { id: cookie.sessionId },
+    include: { user: { select: { id: true, email: true, name: true, role: true } } },
+  });
   if (!session) {
     sendError(reply, 401, "Session expired or revoked", "unauthenticated");
     return;
@@ -38,21 +42,24 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     sendError(reply, 403, "Missing or invalid CSRF token", "forbidden");
     return;
   }
-  const user = await prisma.user.findUnique({ where: { id: session.userId }, select: { id: true, email: true, name: true } });
-  if (!user) {
-    sendError(reply, 401, "Not authenticated", "unauthenticated");
-    return;
-  }
+  const user = session.user;
   // Throttled heartbeat: refresh lastSeenAt at most once a minute.
   if (Date.now() - session.lastSeenAt.getTime() > 60_000) {
     prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } }).catch((err) => request.log.error({ err }, "Failed to touch session"));
   }
   request.userId = user.id;
   request.userEmail = user.email;
+  request.userRole = user.role;
   request.sessionId = session.id;
 }
 
 export async function requireAuth(request: FastifyRequest): Promise<SessionUser> {
   if (!request.userId || !request.userEmail) throw new Error("Not authenticated");
   return { id: request.userId, email: request.userEmail, name: null };
+}
+
+export async function requireAdmin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (request.userRole !== "admin") {
+    sendError(reply, 403, "Admin access required", "forbidden");
+  }
 }

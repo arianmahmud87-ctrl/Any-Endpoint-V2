@@ -1,6 +1,6 @@
 import createContextHook from "@nkzw/create-context-hook";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, setCsrfToken, setUnauthorizedHandler } from "@/lib/api/client";
 import { useMe } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/types";
@@ -57,5 +57,8 @@ export const [SessionProvider, useSession] = createContextHook(() => {
 
   const addRun = useCallback((r: RecentRun) => setRecentRuns((p) => [r, ...p].slice(0, 12)), []);
 
-  return { me: me.data, status, refetch: me.refetch, expired, login, logout, recentRuns, addRun };
+  return useMemo(
+    () => ({ me: me.data, status, refetch: me.refetch, expired, login, logout, recentRuns, addRun }),
+    [me.data, me.refetch, status, expired, login, logout, recentRuns, addRun],
+  );
 });

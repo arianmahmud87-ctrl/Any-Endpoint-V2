@@ -192,7 +192,7 @@ export async function callCodexBackend(
 
   return new Promise<CodexCallResult>((resolve) => {
     let settled = false;
-    let content = "";
+    const contentParts: string[] = [];
     let sawDelta = false;
     const toolCalls = new Map<string, { id: string; name: string; arguments: string }>();
     let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null = null;
@@ -248,7 +248,7 @@ export async function callCodexBackend(
 
       if (type === "response.output_text.delta" && typeof event.delta === "string") {
         sawDelta = true;
-        content += event.delta;
+        contentParts.push(event.delta);
         onTextDelta?.(event.delta);
         return;
       }
@@ -280,7 +280,7 @@ export async function callCodexBackend(
           for (const item of response.output as Record<string, unknown>[]) {
             if (item.type === "message" && Array.isArray(item.content)) {
               for (const part of item.content as { type?: string; text?: string }[]) {
-                if (part.type === "output_text" && typeof part.text === "string") content += part.text;
+                if (part.type === "output_text" && typeof part.text === "string") contentParts.push(part.text);
               }
             }
             if (item.type === "function_call") {
@@ -291,7 +291,7 @@ export async function callCodexBackend(
           }
         }
         clearTimer();
-        finish({ status: 200, completion: { content, toolCalls: [...toolCalls.values()], usage, model } });
+        finish({ status: 200, completion: { content: contentParts.join(""), toolCalls: [...toolCalls.values()], usage, model } });
         return;
       }
       // All other events (response.created, reasoning deltas, metadata, rate limits) are ignored.

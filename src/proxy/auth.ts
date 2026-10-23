@@ -19,11 +19,11 @@ export async function authenticateProxyRequest(request: FastifyRequest, apiKeyHa
   const now = new Date();
   const credentials = await prisma.codexCredential.findMany({ where: { userId: apiKeyRecord.userId, revokedAt: null, status: "active", OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: [{ lastUsedAt: "asc" }, { createdAt: "asc" }] });
   const accessTokens: string[] = [];
-  let selectedCredential: { id: string; label: string } | null = null;
+  let selectedCredential: { id: string; label: string; lastUsedAt: Date | null } | null = null;
   for (const credential of credentials) {
     try {
       accessTokens.push(decryptToken(credential.accessToken, tokenEncryptionKey));
-      selectedCredential ??= { id: credential.id, label: credential.label };
+      selectedCredential ??= { id: credential.id, label: credential.label, lastUsedAt: credential.lastUsedAt };
     } catch (error) {
       request.log.error({ error: error instanceof Error ? error.message : "unknown" }, "Failed to decrypt Codex credential");
     }
@@ -37,10 +37,14 @@ export async function authenticateProxyRequest(request: FastifyRequest, apiKeyHa
     profileLabel = "Device-code connection";
   }
 
+  // Throttled last-used writes: at most one UPDATE per minute per record, so a
+  // burst of requests doesn't double write QPS on the hot tables. Ordering and
+  // display tolerate 60s of staleness, mirroring the session heartbeat.
   const usedAt = new Date();
-  await Promise.all([
-    prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: usedAt } }),
-    selectedCredential ? prisma.codexCredential.update({ where: { id: selectedCredential.id }, data: { lastUsedAt: usedAt } }) : Promise.resolve(),
-  ]);
+  const stale = (d: Date | null) => !d || usedAt.getTime() - d.getTime() > 60_000;
+  const writes: Promise<unknown>[] = [];
+  if (stale(apiKeyRecord.lastUsedAt)) writes.push(prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: usedAt } }));
+  if (selectedCredential && stale(selectedCredential.lastUsedAt)) writes.push(prisma.codexCredential.update({ where: { id: selectedCredential.id }, data: { lastUsedAt: usedAt } }));
+  if (writes.length) await Promise.all(writes);
   return { valid: true, userId: apiKeyRecord.user.id, userEmail: apiKeyRecord.user.email, accessToken: accessTokens[0], accessTokens, expiresAt: credentials[0]?.expiresAt ?? null, intelligentSwitcher: apiKeyRecord.user.intelligentSwitcher, keyPrefix, profileLabel };
 }

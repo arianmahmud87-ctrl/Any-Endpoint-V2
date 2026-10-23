@@ -3,19 +3,19 @@ import { createHmac, randomBytes } from "crypto";
 /**
  * API Key utilities for secure key generation and lookup.
  * 
- * Key format: sk-myproxy-<random-32-bytes-base62>
+ * Key format: sk-<random-32-bytes-base62> (OpenAI-style; legacy sk-myproxy-<random> keys still validate)
  * Storage: HMAC-SHA256 hash (keyed) for indexed lookup
  * 
  * We use HMAC with a server-side secret for deterministic hashing,
  * which allows indexed database lookups unlike bcrypt/scrypt.
  */
 
-const KEY_PREFIX = "sk-myproxy-";
+const KEY_PREFIX = "sk-";
 const KEY_RANDOM_LENGTH = 32; // 32 random bytes
 const LOOKUP_HASH_ALGORITHM = "sha256";
 
 /**
- * Generates a new API key in the format: sk-myproxy-<random>
+ * Generates a new API key in the format: sk-<random>
  * Returns both the plaintext key (show once) and its hash for storage.
  * 
  * @param hashSecret - Server-side secret for HMAC hashing
@@ -43,7 +43,7 @@ export function generateApiKey(hashSecret: string): {
  * Computes the deterministic hash of an API key for lookup.
  * Uses HMAC-SHA256 with a server-side secret.
  * 
- * @param plaintextKey - The API key (sk-myproxy-...)
+ * @param plaintextKey - The API key (sk-..., including legacy sk-myproxy-...)
  * @param hashSecret - Server-side secret for HMAC
  * @returns Hex-encoded HMAC-SHA256 hash
  */
